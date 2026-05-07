@@ -94,9 +94,15 @@ runs:
         # TODO delete dir when job finishes
         CERT_DIR=$(mktemp -d -t certs.XXXX)
 
+        version="1.6.5"
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+
         echo "##[group]Install cfssl"
-          curl --fail -Lo ${CERT_DIR}/cfssl https://github.com/cloudflare/cfssl/releases/download/v1.6.5/cfssl_1.6.5_linux_amd64
-          curl --fail -Lo ${CERT_DIR}/cfssljson https://github.com/cloudflare/cfssl/releases/download/v1.6.5/cfssljson_1.6.5_linux_amd64
+          echo "Downloading https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssl_${version}_${os}_${arch}"
+          curl --fail -Lo ${CERT_DIR}/cfssl "https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssl_${version}_${os}_${arch}"
+          echo "Downloading https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssljson_${version}_${os}_${arch}"
+          curl --fail -Lo ${CERT_DIR}/cfssljson "https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssljson_${version}_${os}_${arch}"
           chmod +x ${CERT_DIR}/cfssl*
         echo "##[endgroup]"
 
