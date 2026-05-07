@@ -4,8 +4,14 @@
 
 Starts a secure, trusted OCI registry for a GitHub Actions workflow. The nuscenes of creating and trusting certificates, or allowing clients to run insecurely is avoided.
 
-- [Usage](#usage)
-
+- [Usage](#usage)- [Usage](#usage)
+- [Community](#community)
+  - [Code of Conduct](#code-of-conduct)
+  - [Communication](#communication)
+  - [Contributing](#contributing)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+- 
 
 ## Usage
 

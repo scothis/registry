@@ -1,5 +1,8 @@
-name: Registry
+name: OCI Registry
 description: Run a local OCI registry in docker
+branding:
+  icon: refresh-cw
+  color: green
 inputs:
   image:
     description: Registry image to run
