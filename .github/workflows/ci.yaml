@@ -16,18 +16,58 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu-latest
-        - ubuntu-24.04
-        - ubuntu-22.04
-        - ubuntu-24.04-arm
-        - ubuntu-22.04-arm
-    runs-on: ${{ matrix.os }}
+        include:
+        - os: ubuntu-latest
+        - os: ubuntu-24.04
+        - os: ubuntu-22.04
+        - os: ubuntu-24.04-arm
+        - os: ubuntu-22.04-arm
+        - name: custom image
+          with:
+            image: :3
+        - name: insecure
+          with:
+            secure: false
+        - name: custom port
+          with:
+            port: 8443
+        - name: custom hostname
+          with:
+            hostname: registry.example
+        - name: custom cert
+          with:
+            tls-cert: registry.pem
+            tls-key: registry-key.pem
+        - name: multiple registries
+          with: {}
+          with-alt:
+            name: alt
+            port: 8443
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     steps:
     - uses: actions/checkout@v6
+    - name: Custom certs
+      if: matrix.with.tls-cert
+      run: |
+        set -o errexit
+        set -o nounset
+        set -o pipefail
+
+        ./scripts/generate-certs.sh custom registry.local
+        echo "Copy certificate to ${{ matrix.with.tls-cert }}"
+        cp "${RUNNER_TEMP}/reconcilerio/registry/custom/server.pem" "${{ matrix.with.tls-cert }}"
+        echo "Copy certificate key to ${{ matrix.with.tls-key }}"
+        cp "${RUNNER_TEMP}/reconcilerio/registry/custom/server-key.pem" "${{ matrix.with.tls-key }}"
+        rm -rf "${RUNNER_TEMP}/reconcilerio/registry/custom"
     - name: OCI registry
       id: registry
       uses: ./
+      with: ${{ matrix.with || fromJSON('{}') }}
+    - name: OCI registry (alt)
+      if: matrix.with-alt
+      id: registry-alt
+      uses: ./
+      with: ${{ matrix.with-alt }}
     - name: Install crane
       run: |
         set -o errexit
@@ -55,6 +95,15 @@ jobs:
 
         crane copy ubuntu ${{ steps.registry.outputs.registry }}/tests/ubuntu
         crane digest ${{ steps.registry.outputs.registry }}/tests/ubuntu
+    - name: Use registry (alt)
+      if: matrix.with-alt
+      run: |
+        set -o errexit
+        set -o nounset
+        set -o pipefail
+
+        crane copy ${{ steps.registry.outputs.registry }}/tests/ubuntu ${{ steps.registry-alt.outputs.registry }}/tests/ubuntu
+        crane digest ${{ steps.registry-alt.outputs.registry }}/tests/ubuntu
     - name: Show registry outputs
       run: |
         set -o errexit
@@ -67,3 +116,16 @@ jobs:
         echo "tls-ca-raw: ${{ steps.registry.outputs.tls-ca-raw }}"
         echo ""
         echo "${{ toJSON(steps.registry.outputs) }}"
+    - name: Show registry outputs (alt)
+      if: matrix.with-alt
+      run: |
+        set -o errexit
+        set -o nounset
+        set -o pipefail
+
+        echo "hostname: ${{ steps.registry-alt.outputs.hostname }}"
+        echo "registry: ${{ steps.registry-alt.outputs.registry }}"
+        echo "tls-ca: ${{ steps.registry-alt.outputs.tls-ca }}"
+        echo "tls-ca-raw: ${{ steps.registry-alt.outputs.tls-ca-raw }}"
+        echo ""
+        echo "${{ toJSON(steps.registry-alt.outputs) }}"

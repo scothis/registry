@@ -12,7 +12,7 @@ echo "##[group]Registry logs"
 echo "##[endgroup]"
 
 echo "##[group]Remove hosts entry"
-    sudo sed -i "/${hostname} # reconcilerio\/registry/d" /etc/hosts
+    sudo sed -i "/${hostname} # reconcilerio\/registry\/${name}/d" /etc/hosts
     cat /etc/hosts
 echo "##[endgroup]"
 

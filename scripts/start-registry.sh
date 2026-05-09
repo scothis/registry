@@ -15,7 +15,7 @@ tls_key=${7}
 echo "hostname=${hostname}" >> ${GITHUB_OUTPUT}
 
 if [[ "${image}" == ":"* ]] ; then
-  image="ghcr.io/reconcilerio/registry/docker.io/registry${image}"
+    image="ghcr.io/reconcilerio/registry/docker.io/registry${image}"
 fi
 
 if [[ "${secure}" == "true" ]] ; then
@@ -30,14 +30,17 @@ if [[ "${secure}" == "true" ]] ; then
     fi
     echo "registry=${registry}" >> ${GITHUB_OUTPUT}
 
-    cert_dir="${RUNNER_TEMP}/reconcilerio/registry/${name}"
-
     echo "##[group]Starting secure registry: ${registry}"
+        tls_cert="$(realpath "${tls_cert:-${RUNNER_TEMP}/reconcilerio/registry/${name}/server.pem}")"
+        tls_key="$(realpath "${tls_key:-${RUNNER_TEMP}/reconcilerio/registry/${name}/server-key.pem}")"
+        echo "Using TLS cert: ${tls_cert}"
+        echo "Using TLS key: ${tls_key}"
+        
         docker run -d \
             --restart=always \
             --name "reconcilerio-registry-${name}" \
-            -v "${tls_cert:-${cert_dir}/server.pem}:/certs/server.pem:ro" \
-            -v "${tls_key:-${cert_dir}/server-key.pem}:/certs/server-key.pem:ro" \
+            -v "${tls_cert}:/certs/server.pem:ro" \
+            -v "${tls_key}:/certs/server-key.pem:ro" \
             -e "REGISTRY_HTTP_ADDR=0.0.0.0:${port}" \
             -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server.pem \
             -e REGISTRY_HTTP_TLS_KEY=/certs/server-key.pem \
@@ -69,6 +72,6 @@ else
 fi
 
 echo "##[group]Add hosts entry: ${hostname} -> $(hostname -I | cut -d' ' -f1)"
-    echo "$(hostname -I | cut -d' ' -f1) ${hostname} # reconcilerio/registry" | sudo tee -a /etc/hosts > /dev/null
+    echo "$(hostname -I | cut -d' ' -f1) ${hostname} # reconcilerio/registry/${name}" | sudo tee -a /etc/hosts > /dev/null
     cat /etc/hosts
 echo "##[endgroup]"
