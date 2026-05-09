@@ -14,6 +14,10 @@ tls_key=${7}
 
 echo "hostname=${hostname}" >> ${GITHUB_OUTPUT}
 
+if [[ "${image}" == ":"* ]] ; then
+  image="ghcr.io/reconcilerio/registry/docker.io/registry${image}"
+fi
+
 if [[ "${secure}" == "true" ]] ; then
     # run secure
     

@@ -37,8 +37,8 @@ See [action.yml](action.yml)
     secure: ''
 
     # Optional registry image.
-    # Registry image that is run. Specify a different image to avoid pulling from Docker Hub, or pin to a specific image.
-    # Default: 'registry:2'
+    # Registry image that is run. Values that start with a colon will resolve the tag within the ghcr.io/reconcilerio/registry/docker.io/registry repository, which is kept in sync with docker.io/registry.
+    # Default: ':2'
     image: ''
 
     # Optional container name
