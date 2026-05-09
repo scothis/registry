@@ -13,7 +13,7 @@ inputs:
     description: Container name, only needs to be defined when multiple registries are run
     required: true
     type: string
-    default: reconcilerio-registry
+    default: default
   secure:
     description: When true, use https instead of http
     required: true
@@ -38,10 +38,10 @@ inputs:
 outputs:
   hostname:
     description: Registry hostname
-    value: ${{ steps.start.outputs.hostname }}
+    value: ${{ steps.run.outputs.hostname }}
   registry:
     description: Registry coordinates, including port if needed 
-    value: ${{ steps.start.outputs.registry }}
+    value: ${{ steps.run.outputs.registry }}
   tls-ca:
     description: Path to certificate authority used by the registry
     value: ${{ steps.generate-certs.outputs.tls-ca }}
@@ -86,242 +86,13 @@ runs:
     - name: Generate certs
       id: generate-certs
       if: inputs.secure && !inputs.tls-key
-      run: |
-        set -o errexit
-        set -o nounset
-        set -o pipefail
-
-        # TODO delete dir when job finishes
-        CERT_DIR=$(mktemp -d -t certs.XXXX)
-
-        version="1.6.5"
-        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-        arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
-
-        echo "##[group]Install cfssl"
-          echo "Downloading https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssl_${version}_${os}_${arch}"
-          curl --fail -Lo ${CERT_DIR}/cfssl "https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssl_${version}_${os}_${arch}"
-          echo "Downloading https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssljson_${version}_${os}_${arch}"
-          curl --fail -Lo ${CERT_DIR}/cfssljson "https://github.com/cloudflare/cfssl/releases/download/v${version}/cfssljson_${version}_${os}_${arch}"
-          chmod +x ${CERT_DIR}/cfssl*
-        echo "##[endgroup]"
-
-        echo "##[group]Generate configs"
-          cat <<EOF > ${CERT_DIR}/config.json
-          {
-            "signing": {
-              "default": {
-                "expiry": "24h"
-              },
-              "profiles": {
-                "intermediate": {
-                  "usages": [
-                    "cert sign",
-                    "crl sign"
-                  ],
-                  "ca_constraint": {
-                    "is_ca": true,
-                    "max_path_len": 0,
-                    "max_path_len_zero": true
-                  },
-                  "expiry": "24h"
-                },
-                "server": {
-                  "usages": [
-                    "signing",
-                    "key encipherment",
-                    "server auth"
-                  ],
-                  "expiry": "24h"
-                },
-                "client": {
-                  "usages": [
-                    "signing",
-                    "digital signature",
-                    "key encipherment",
-                    "client auth"
-                  ],
-                  "expiry": "24h"
-                },
-                "peer": {
-                  "usages": [
-                    "signing",
-                    "digital signature",
-                    "key encipherment",
-                    "client auth",
-                    "server auth"
-                  ],
-                  "expiry": "24h"
-                }
-              }
-            }
-          }
-        EOF
-
-          cat <<EOF > ${CERT_DIR}/intermediate-csr.json
-          {
-            "CN": "Intermediate CA",
-            "hosts": [
-              ""
-            ],
-            "key": {
-              "algo": "rsa",
-              "size": 2048
-            },
-            "names": [
-              {
-                "O": "${{ github.repository }}",
-                "OU": "${{ github.workflow }}"
-              }
-            ]
-          }
-        EOF
-
-          cat <<EOF > ${CERT_DIR}/root-csr.json
-          {
-            "CN": "Root CA",
-            "hosts": [],
-            "key": {
-              "algo": "rsa",
-              "size": 2048
-            },
-            "names": [
-              {
-                "O": "${{ github.repository }}",
-                "OU": "${{ github.workflow }}"
-              }
-            ]
-          }
-        EOF
-
-          cat <<EOF > ${CERT_DIR}/server-csr.json
-          {
-            "key": {
-              "algo": "rsa",
-              "size": 2048
-            },
-            "names": [
-              {
-                "O": "${{ github.repository }}",
-                "OU": "${{ github.workflow }}"
-              }
-            ]
-          }
-        EOF
-        echo "##[endgroup]"
-
-        echo "##[group]Generate CA"
-          ${CERT_DIR}/cfssl gencert \
-            -initca ${CERT_DIR}/root-csr.json \
-            | ${CERT_DIR}/cfssljson \
-              -bare ${CERT_DIR}/root-ca
-          ${CERT_DIR}/cfssl gencert \
-            -ca ${CERT_DIR}/root-ca.pem \
-            -ca-key ${CERT_DIR}/root-ca-key.pem \
-            -config="${CERT_DIR}/config.json" \
-            -profile="intermediate" \
-            ${CERT_DIR}/intermediate-csr.json \
-            | ${CERT_DIR}/cfssljson \
-              -bare ${CERT_DIR}/signing-ca
-          cat ${CERT_DIR}/signing-ca.pem ${CERT_DIR}/root-ca.pem > ${CERT_DIR}/ca.pem
-        echo "##[endgroup]"
-
-        echo "##[group]Install CA"
-          # TODO handle non-ubuntu/debian systems
-          # https://ubuntu.com/server/docs/security-trust-store
-          sudo apt-get install -y ca-certificates
-          sudo cp ${CERT_DIR}/ca.pem /usr/local/share/ca-certificates/${{ inputs.name }}-ca.crt
-          sudo update-ca-certificates
-        echo "##[endgroup]"
-
-        echo "##[group]Generate cert"
-          ${CERT_DIR}/cfssl gencert \
-            -ca ${CERT_DIR}/signing-ca.pem \
-            -ca-key ${CERT_DIR}/signing-ca-key.pem \
-            -config="${CERT_DIR}/config.json" \
-            -profile="server" \
-            -hostname="${{ inputs.hostname }},${{ inputs.name }}" \
-            ${CERT_DIR}/server-csr.json \
-            | ${CERT_DIR}/cfssljson \
-              -bare ${CERT_DIR}/server
-        echo "##[endgroup]"
-
-        echo "##[group]Set outputs"
-          echo "tls-ca=${CERT_DIR}/ca.pem" | tee -a "$GITHUB_OUTPUT"
-          echo 'tls-ca-raw<<EOF' | tee -a "$GITHUB_OUTPUT"
-            cat ${CERT_DIR}/ca.pem | tee -a "$GITHUB_OUTPUT"
-          echo 'EOF' | tee -a "$GITHUB_OUTPUT"
-          echo "tls-cert=${CERT_DIR}/server.pem" >> $GITHUB_OUTPUT
-          echo "tls-key=${CERT_DIR}/server-key.pem" >> $GITHUB_OUTPUT
-        echo "##[endgroup]"
-
-        echo "##[group]Certificate authority"
-          ${CERT_DIR}/cfssl certinfo -cert ${CERT_DIR}/signing-ca.pem
-        echo "##[endgroup]"
-        echo "##[group]Certificate"
-          ${CERT_DIR}/cfssl certinfo -cert ${CERT_DIR}/server.pem
-        echo "##[endgroup]"
-      shell: bash
-
-    - name: Start registry
-      id: start
-      run: |
-        set -o errexit
-        set -o nounset
-        set -o pipefail
-
-        echo "hostname=${{ inputs.hostname }}" >> $GITHUB_OUTPUT
-
-        if [[ "${{ inputs.secure }}" == "true" ]]; then
-          # run secure
-
-          # TODO delete dir when job finishes
-          CERT_DIR=$(mktemp -d -t certs.XXXX)
-          if [[ "${{ inputs.tls-cert }}" == "" ]]; then
-            cp ${{ steps.generate-certs.outputs.tls-ca }} ${CERT_DIR}/ca.pem
-            cp ${{ steps.generate-certs.outputs.tls-cert }} ${CERT_DIR}/server.pem
-            cp ${{ steps.generate-certs.outputs.tls-key }} ${CERT_DIR}/server-key.pem
-          fi
-
-          port="${{ inputs.port }}"
-          if [[ "${port}" == "0" ]]; then
-            port="443"
-            echo "registry=${{ inputs.hostname }}" >> $GITHUB_OUTPUT
-          else
-            echo "registry=${{ inputs.hostname }}:${port}" >> $GITHUB_OUTPUT
-          fi
-
-          # TODO delete container when job finishes
-          docker run -d \
-            --restart=always \
-            --name ${{ inputs.name }} \
-            -v ${CERT_DIR}:/certs \
-            -e REGISTRY_HTTP_ADDR=0.0.0.0:${port} \
-            -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server.pem \
-            -e REGISTRY_HTTP_TLS_KEY=/certs/server-key.pem \
-            -p "${port}:${port}" \
-            ${{ inputs.image }}
-
-        else
-          # run insecure
-
-          port="${{ inputs.port }}"
-          if [[ "${port}" == "0" ]]; then
-            port="80"
-            echo "registry=${{ inputs.hostname }}" >> $GITHUB_OUTPUT
-          else
-            echo "registry=${{ inputs.hostname }}:${port}" >> $GITHUB_OUTPUT
-          fi
-
-          # TODO delete container when job finishes
-          docker run -d \
-            --restart=always \
-            --name ${{ inputs.name }} \
-            -e REGISTRY_HTTP_ADDR=0.0.0.0:${port} \
-            -p "${port}:${port}" \
-            ${{ inputs.image }}
-
-        fi
-
-        echo "$(hostname -I | cut -d' ' -f1) ${{ inputs.hostname }}" | sudo tee -a /etc/hosts
-      shell: bash
+      uses: ./.github/actions/with-post-step
+      with:
+        main: ./scripts/generate-certs.sh "${{ inputs.name }}" "${{ inputs.hostname }}"
+        post: ./scripts/cleanup-certs.sh "${{ inputs.name }}"
+    - name: Run registry
+      id: run
+      uses: ./.github/actions/with-post-step
+      with:
+        main: ./scripts/start-registry.sh "${{ inputs.name }}" "${{ inputs.hostname }}" "${{ inputs.port }}" "${{ inputs.image }}" "${{ inputs.secure }}" "${{ inputs.tls-cert }}" "${{ inputs.tls-key }}"
+        post: ./scripts/stop-registry.sh "${{ inputs.name }}" "${{ inputs.hostname }}"
